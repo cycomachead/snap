@@ -3351,8 +3351,6 @@ BlockMorph.prototype.exportMenu = function () {
         shiftClicked = world.currentKey === 16,
         top = this.topBlock();
 
-    console.log('export menu!', this, top);
-
     menu.addItem(
         "script pic...",
         () => {
@@ -3373,7 +3371,7 @@ BlockMorph.prototype.exportMenu = function () {
             top.allChildren().some(any => any.selector === 'doReport'))
     ) {
         menu.addItem(
-            "copy result...",
+            "copy result",
             () => top.copyResult(),
             'save a picture of both\nthis script and its result'
         );
@@ -3911,9 +3909,8 @@ BlockMorph.prototype.copyResult = function () {
         stage = receiver.parentThatIsA(StageMorph);
         if (stage) {
             stage.threads.stopProcess(top);
-            stage.threads.startProcess(top, receiver, false, true, () => {
-                console.log('CALLBACK FINSHED');
-                console.log(this)
+            stage.threads.startProcess(top, receiver, false, false, (result) => {
+                navigator.clipboard.writeText(result)
             });
         }
     }
