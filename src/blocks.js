@@ -3278,51 +3278,9 @@ BlockMorph.prototype.userMenu = function () {
             }
         );
     }
-    menu.addItem(
-        "script pic...",
-        () => {
-            var ide = this.parentThatIsA(IDE_Morph) ||
-                this.parentThatIsA(BlockEditorMorph).target.parentThatIsA(
-                    IDE_Morph
-            );
-            ide.saveCanvasAs(
-                top.scriptPic(),
-                (ide.projectName || localize('untitled')) + ' ' +
-                    localize('script pic')
-            );
-        },
-        'save a picture\nof this script'
-    );
-    if (top instanceof ReporterBlockMorph ||
-        (!(top instanceof PrototypeHatBlockMorph) &&
-            top.allChildren().some((any) => any.selector === 'doReport'))
-    ) {
-        menu.addItem(
-            "result pic...",
-            () => top.exportResultPic(),
-            'save a picture of both\nthis script and its result'
-        );
-    }
-    if (shiftClicked) {
-        menu.addItem(
-            'download script',
-            () => {
-                var ide = this.parentThatIsA(IDE_Morph),
-                    blockEditor = this.parentThatIsA(BlockEditorMorph);
-                if (!ide && blockEditor) {
-                    ide = blockEditor.target.parentThatIsA(IDE_Morph);
-                }
-                if (ide) {
-                    ide.saveXMLAs(
-                        ide.serializer.serialize(top),
-                        top.selector + ' script',
-                        false);
-                }
-            },
-            'download this script\nas an XML file',
-            new Color(100, 0, 0)
-        );
-    }
+    menu.addLine();
+    menu.addMenu('export', this.exportMenu());
+
     if (proc) {
         if (vNames.length) {
             menu.addLine();
@@ -3387,6 +3345,66 @@ BlockMorph.prototype.userMenu = function () {
     }
     return menu;
 };
+
+BlockMorph.prototype.exportMenu = function () {
+    var menu = new MenuMorph(this),
+        shiftClicked = world.currentKey === 16,
+        top = this.topBlock();
+
+    console.log('export menu!', this, top);
+
+    menu.addItem(
+        "script pic...",
+        () => {
+            var ide = this.parentThatIsA(IDE_Morph) ||
+                this.parentThatIsA(BlockEditorMorph).target.parentThatIsA(
+                    IDE_Morph
+            );
+            ide.saveCanvasAs(
+                top.scriptPic(),
+                (ide.projectName || localize('untitled')) + ' ' +
+                    localize('script pic')
+            );
+        },
+        'save a picture\nof this script'
+    );
+    if (top instanceof ReporterBlockMorph ||
+        (!(top instanceof PrototypeHatBlockMorph) &&
+            top.allChildren().some(any => any.selector === 'doReport'))
+    ) {
+        menu.addItem(
+            "copy result...",
+            () => top.copyResult(),
+            'save a picture of both\nthis script and its result'
+        );
+        menu.addItem(
+            "result pic...",
+            () => top.exportResultPic(),
+            'run this script and copy the result to the clipboard'
+        );
+    }
+    if (shiftClicked) {
+        menu.addItem(
+            'download script',
+            () => {
+                var ide = this.parentThatIsA(IDE_Morph),
+                    blockEditor = this.parentThatIsA(BlockEditorMorph);
+                if (!ide && blockEditor) {
+                    ide = blockEditor.target.parentThatIsA(IDE_Morph);
+                }
+                if (ide) {
+                    ide.saveXMLAs(
+                        ide.serializer.serialize(top),
+                        top.selector + ' script',
+                        false);
+                }
+            },
+            'download this script\nas an XML file',
+            new Color(100, 0, 0)
+        );
+    }
+    return menu;
+}
 
 BlockMorph.prototype.showMessageUsers = function () {
     // for the following selectors:
@@ -3880,6 +3898,23 @@ BlockMorph.prototype.exportResultPic = function () {
         if (stage) {
             stage.threads.stopProcess(top);
             stage.threads.startProcess(top, receiver, false, true);
+        }
+    }
+};
+
+BlockMorph.prototype.copyResult = function () {
+    var top = this.topBlock(),
+        receiver = top.scriptTarget(),
+        stage;
+    if (top !== this) {return; }
+    if (receiver) {
+        stage = receiver.parentThatIsA(StageMorph);
+        if (stage) {
+            stage.threads.stopProcess(top);
+            stage.threads.startProcess(top, receiver, false, true, () => {
+                console.log('CALLBACK FINSHED');
+                console.log(this)
+            });
         }
     }
 };
@@ -12516,7 +12551,7 @@ MultiArgMorph.prototype.deleteSlot = function (anInput) {
 MultiArgMorph.prototype.insertNewInputBefore = function (anInput, contents) {
     var idx = this.children.indexOf(anInput),
         newPart = this.labelPart(this.slotSpec);
-    
+
     if (this.maxInputs && (this.children.length > this.maxInputs)) {
         return;
     }
