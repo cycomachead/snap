@@ -1,4 +1,4 @@
-var snapVersion = '7.2.0',
+var snapVersion = '7.4.0-dev',
     cacheName = 'snap-pwa',
     filesToCache = [
         'snap.html',
@@ -94,6 +94,7 @@ var snapVersion = '7.2.0',
         'libraries/HummingbirdBlocks.xml',
         'libraries/iteration-composition.xml',
         'libraries/leap-library.xml',
+        'libraries/list_comprehension_module.xml',
         'libraries/list-utilities.xml',
         'libraries/localstorage_module.xml',
         'libraries/make-variables.xml',
