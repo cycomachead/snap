@@ -3316,7 +3316,7 @@ BlockMorph.prototype.userMenu = function () {
     menu.addLine();
     menu.addMenu('export', this.exportMenu());
 
-e    if (proc) {
+    if (proc) {
         if (vNames.length) {
             menu.addLine();
             vNames.forEach(vn =>
@@ -3383,8 +3383,10 @@ e    if (proc) {
 
 BlockMorph.prototype.exportMenu = function () {
     var menu = new MenuMorph(this),
-        shiftClicked = world.currentKey === 16,
-        top = this.topBlock();
+        top = this.topBlock(),
+        isReporterScript = top instanceof ReporterBlockMorph ||
+        (!(top instanceof PrototypeHatBlockMorph) &&
+            top.allChildren().some(any => any.selector === 'doReport'));
 
     menu.addItem(
         "script pic...",
@@ -3401,14 +3403,11 @@ BlockMorph.prototype.exportMenu = function () {
         },
         'save a picture\nof this script'
     );
-    if (top instanceof ReporterBlockMorph ||
-        (!(top instanceof PrototypeHatBlockMorph) &&
-            top.allChildren().some((any) => any.selector === 'doReport'))
-    ) {
+    if (isReporterScript) {
         menu.addItem(
             "copy result",
             () => top.copyResult(),
-            'save a picture of both\nthis script and its result'
+            'copy the result of this script\nto the clipboard'
         );
         menu.addItem(
             "result pic...",
@@ -3422,7 +3421,7 @@ BlockMorph.prototype.exportMenu = function () {
         'download this script\nas an XML file'
     );
     return menu;
-}
+};
 
 BlockMorph.prototype.showMessageUsers = function () {
     // for the following selectors:
@@ -3987,11 +3986,13 @@ BlockMorph.prototype.copyResult = function () {
         stage = receiver.parentThatIsA(StageMorph);
         if (stage) {
             stage.threads.stopProcess(top);
-            stage.threads.startProcess(top, receiver, false, false, (result) => {
+            stage.threads.startProcess(top, receiver, false, false, result => {
                 navigator.clipboard.writeText(result)
             });
         }
     }
+};
+
 // BlockMorph exporting a script
 
 BlockMorph.prototype.exportScript = function () {
