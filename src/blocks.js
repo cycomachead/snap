@@ -12735,7 +12735,7 @@ MultiArgMorph.prototype.deleteSlot = function (anInput) {
     this.fixLayout();
 };
 
-MultiArgMorph.prototype.insertNewInputBefeore = function (anInput, contents) {
+MultiArgMorph.prototype.insertNewInputBefore = function (anInput, contents) {
     var idx = this.children.indexOf(anInput),
         newPart = this.labelPart(this.slotSpec),
         infix;
