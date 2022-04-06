@@ -3381,6 +3381,12 @@ BlockMorph.prototype.userMenu = function () {
     return menu;
 };
 
+BlockMorph.prototype.findIDE = function () {
+    // private -- return the nearest IDE_Morph, incase this script is from an editor.
+    return this.parentThatIsA(IDE_Morph) ||
+        this.parentThatIsA(BlockEditorMorph).target.parentThatIsA(IDE_Morph);
+}
+
 BlockMorph.prototype.exportMenu = function () {
     var menu = new MenuMorph(this),
         top = this.topBlock(),
@@ -3389,12 +3395,9 @@ BlockMorph.prototype.exportMenu = function () {
             top.allChildren().some(any => any.selector === 'doReport'));
 
     menu.addItem(
-        "script pic...",
+        'script pic...',
         () => {
-            var ide = this.parentThatIsA(IDE_Morph) ||
-                this.parentThatIsA(BlockEditorMorph).target.parentThatIsA(
-                    IDE_Morph
-            );
+            var ide = this.findeIDE();
             ide.saveCanvasAs(
                 top.scriptPic(),
                 (ide.projectName || localize('untitled')) + ' ' +
@@ -3405,18 +3408,18 @@ BlockMorph.prototype.exportMenu = function () {
     );
     if (isReporterScript) {
         menu.addItem(
-            "copy result",
+            'copy result',
             () => top.copyResult(),
             'copy the result of this script\nto the clipboard'
         );
         menu.addItem(
-            "result pic...",
+            'result pic...',
             () => top.exportResultPic(),
             'save a picture of both\nthis script and its result'
         );
     }
     menu.addItem(
-        'export script',
+        'export script...',
         () => top.exportScript(),
         'download this script\nas an XML file'
     );
