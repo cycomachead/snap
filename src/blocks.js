@@ -5730,6 +5730,10 @@ BlockMorph.prototype.mouseDownLeft = function (pos) {
         // before possible picking me up
         this.mouseLeaveBounds();
     }
+    console.log(`BLOCK MORPH Mouse Down left / strings ${this}`)
+    document.getElementById('aria-output').innerHTML = this.toString();
+    document.getElementById('aria-output').focus();
+
 };
 
 // BlockMorph dragging and dropping
@@ -6100,7 +6104,7 @@ BlockMorph.prototype.rewind = function (scriptOnly = false) {
 
     return trace;
 };
- 
+
  BlockMorph.prototype.getVarName = function () {
     // return the name of the (first) variable accessed by this block or null
     // if it doesn't access any variable.
@@ -6117,7 +6121,7 @@ BlockMorph.prototype.rewind = function (scriptOnly = false) {
     }
     return null;
  };
- 
+
 // CommandBlockMorph ///////////////////////////////////////////////////
 
 /*
@@ -13772,7 +13776,7 @@ MultiArgMorph.prototype.insertNewInputBefore = function (anInput, contents) {
     var idx = this.children.indexOf(anInput),
         newPart = this.labelPart(this.slotSpec),
         infix;
-    
+
     if (this.maxInputs && (this.inputs().length >= this.maxInputs)) {
         return;
     }
