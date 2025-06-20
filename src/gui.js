@@ -6421,10 +6421,13 @@ IDE_Morph.prototype.exportProjectSummary = function (useDropShadows) {
                             ul = addNode('ul');
                             isFirst = false;
                         }
-                        li = addNode('li', ul);
+                        dt = addNode('dt', ul);
+                        dd = addNode('dd', ul);
+                        dt.attributesclass = 'block-header';
+                        dd.attributes.class = 'block-definition';
                         blockImg = addImage(
                             def.templateInstance().scriptPic(),
-                            li
+                            dt
                         );
                         blockImg.attributes.class = 'script';
                         def.sortedElements().forEach(script => {
@@ -6432,9 +6435,11 @@ IDE_Morph.prototype.exportProjectSummary = function (useDropShadows) {
                                 script instanceof BlockMorph ?
                                         script.scriptPic()
                                                 : script.fullImage(),
-                                li
+                                dd
                             );
                             defImg.attributes.class = 'script';
+                            // add lisp code on the right hand side, so there is searchable text
+                            add(script.toLisp(), 'span', dd)
                         });
                     }
                 });
@@ -6483,26 +6488,20 @@ IDE_Morph.prototype.exportProjectSummary = function (useDropShadows) {
     body = addNode('body', html);
     add(pname, 'h1');
 
-    /*
-    if (this.cloud.username) {
-        add(localize('by ') + this.cloud.username);
-    }
-    */
-    if (location.hash.indexOf('#present:') === 0) {
-        add(location.toString(), 'a', body).attributes.href =
-            location.toString();
-        addImage(
-            stage.thumbnail(stage.dimensions)
-        ).attributes.class = 'sprite';
-        add(this.serializer.app, 'h4');
-    } else {
-        add(this.serializer.app, 'h4');
-        addImage(
-            stage.thumbnail(stage.dimensions)
-        ).attributes.class = 'sprite';
-    }
+    // if (this.cloud.username && location.href.indexOf('#present') > 0) {
+    //     add(localize('by ') + this.cloud.username);
+    //     add(location.toString(), 'a', body).attributes.href =
+    //         location.toString();
+    // }
+
+    addImage(
+        stage.thumbnail(stage.dimensions)
+    ).attributes.class = 'sprite';
+    add(this.serializer.app, 'h4');
+
 
     // project notes
+    // TODO: Put in a div + pre-code
     notes = Process.prototype.reportTextSplit(this.scene.notes, 'line');
     notes.asArray().forEach(paragraph => add(paragraph));
 
@@ -6511,6 +6510,7 @@ IDE_Morph.prototype.exportProjectSummary = function (useDropShadows) {
     toc = addNode('ul');
 
     // sprites & stage
+    // TODO: Sort by number of scripts?
     this.sprites.asArray().concat([stage]).forEach(sprite => {
         var tocEntry = addNode('li', toc),
             scripts = sprite.scripts.sortedElements(),
@@ -6524,6 +6524,7 @@ IDE_Morph.prototype.exportProjectSummary = function (useDropShadows) {
             tocEntry,
             true
         ).attributes.class = 'toc';
+        // TODO -- label as sprite or stage?
         add(sprite.name, 'a', tocEntry).attributes.href = '#' + sprite.name;
 
         add(sprite.name, 'h2').attributes.id = sprite.name;
@@ -6558,6 +6559,24 @@ IDE_Morph.prototype.exportProjectSummary = function (useDropShadows) {
             }
         }
 
+        // variables
+        addVariables(sprite.variables);
+
+        // scripts
+        if (scripts.length) {
+            add(localize('Scripts'), 'h3');
+            scripts.forEach(script => {
+                var img = addImage(script instanceof BlockMorph ?
+                        script.scriptPic()
+                                : script.fullImage());
+                img.attributes.class = 'script';
+            });
+        }
+
+        // custom blocks
+        addBlocks(sprite.customBlocks);
+
+        // TODO: Move this to a separate costumes/sounds section
         // costumes
         if (cl > 1 || (sprite.getCostumeIdx() !== cl)) {
             add(localize('Costumes'), 'h3');
@@ -6577,23 +6596,6 @@ IDE_Morph.prototype.exportProjectSummary = function (useDropShadows) {
                 add(sound.name, 'li', ol)
             );
         }
-
-        // variables
-        addVariables(sprite.variables);
-
-        // scripts
-        if (scripts.length) {
-            add(localize('Scripts'), 'h3');
-            scripts.forEach(script => {
-                var img = addImage(script instanceof BlockMorph ?
-                        script.scriptPic()
-                                : script.fullImage());
-                img.attributes.class = 'script';
-            });
-        }
-
-        // custom blocks
-        addBlocks(sprite.customBlocks);
     });
 
     // globals
