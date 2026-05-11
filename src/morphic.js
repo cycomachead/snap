@@ -3780,7 +3780,7 @@ Morph.prototype.fullDrawOn = function (aContext, aRect) {
     if (!this.isVisible) {return; }
     this.drawOn(aContext, aRect);
     this.children.forEach(child => child.fullDrawOn(aContext, aRect));
-    if (this.isFocused) {
+    if (this.isFocused && this.world() && this.world().focusRingVisible) {
         this.drawFocusRing(aContext, aRect);
     }
 };
@@ -8409,6 +8409,7 @@ MenuMorph.prototype.closeSubmenu = function () {
 
 MenuMorph.prototype.getFocus = function () {
     this.world.keyboardFocus = this;
+    this.world.setFocusRingVisible(false);
     this.selection = null;
     this.selectFirst();
     this.hasFocus = true;
@@ -8436,6 +8437,8 @@ MenuMorph.prototype.processKeyDown = function (event) {
         return this.enterSubmenu();
     case 40: // 'down arrow'
         return this.selectDown();
+    case 9: // 'tab'
+        return event.shiftKey ? this.selectUp() : this.selectDown();
     default:
         nop();
     }
@@ -9257,7 +9260,9 @@ StringMorph.prototype.disableSelecting = function () {
 
 StringMorph.prototype.isFocusable = function () {
     return this.isVisible &&
-        (this.acceptsFocus || this.isEditable || this.enableLinks);
+        (this.acceptsFocus === true ||
+            (this.acceptsFocus !== false &&
+                (this.isEditable || this.enableLinks)));
 };
 
 // TextMorph ////////////////////////////////////////////////////////////////
@@ -10394,7 +10399,7 @@ FrameMorph.prototype.fullDrawOn = function (ctx, aRect) {
     if (shadow) {
         shadow.drawOn(ctx, aRect);
     }
-    if (this.isFocused) {
+    if (this.isFocused && this.world() && this.world().focusRingVisible) {
         this.drawFocusRing(ctx, aRect);
     }
 };
@@ -11487,6 +11492,7 @@ HandMorph.prototype.processMouseDown = function (event) {
 
     // process the actual event
     this.destroyTemporaries();
+    this.world.setFocusRingVisible(false);
     this.contextMenuEnabled = true;
     this.morphToGrab = null;
     this.grabPosition = null;
@@ -12128,6 +12134,7 @@ WorldMorph.prototype.init = function (aCanvas, fillPage) {
     this.keyboardHandler = null;
     this.keyboardFocus = null;
     this.focusedMorph = null;
+    this.focusRingVisible = false;
     this.cursor = null;
     this.lastEditedText = null;
     this.activeMenu = null;
@@ -12363,6 +12370,7 @@ WorldMorph.prototype.initKeyboardHandler = function () {
                     kbd.world.keyboardFocus.processKeyPress(event);
                 }
                 if (!kbd.world.keyboardFocus) {
+                    kbd.world.setFocusRingVisible(true);
                     kbd.world.focusNextField(event.shiftKey);
                 }
                 event.preventDefault();
@@ -12606,6 +12614,16 @@ WorldMorph.prototype.focusableMorphAt = function (aMorph) {
         morph = morph.parent;
     }
     return morph === this ? null : morph;
+};
+
+WorldMorph.prototype.setFocusRingVisible = function (isVisible) {
+    if (this.focusRingVisible === isVisible) {
+        return;
+    }
+    this.focusRingVisible = isVisible;
+    if (this.focusedMorph) {
+        this.focusedMorph.rerender();
+    }
 };
 
 WorldMorph.prototype.setFocusedMorph = function (aMorph) {
