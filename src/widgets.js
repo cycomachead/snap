@@ -173,6 +173,9 @@ PushButtonMorph.prototype.init = function (
     TriggerMorph.uber.init.call(this);
 
     // override inherited properites:
+    this.isFocusable = true;
+    this.ariaRole = 'button';
+    this.ariaLabel = labelString || null;
     this.color = PushButtonMorph.prototype.color;
     this.createLabel();
     this.fixLayout();
@@ -574,6 +577,9 @@ ToggleButtonMorph.prototype.init = function (
         environment,
         hint
     );
+
+    // override for accessibility
+    this.ariaRole = 'toggle button';
 
     // override default colors if others are specified
     if (colors) {
@@ -1209,6 +1215,10 @@ ToggleMorph.prototype.init = function (
         environment,
         hint
     );
+
+    // override for accessibility
+    this.ariaRole = style === 'checkbox' ? 'checkbox' : 'radio';
+    this.ariaLabel = labelString || null;
     this.fixLayout();
     this.refresh();
 };
@@ -2648,10 +2658,17 @@ DialogBoxMorph.prototype.popUp = function (world, noFocus) {
         if (!noFocus) {world.keyboardFocus = this; }
         this.setCenter(world.center());
         this.edit();
+        // auto-focus the first focusable child for accessibility
+        var focusable = this.allFocusableFields();
+        world.setFocus(focusable.length > 0 ? focusable[0] : null);
     }
 };
 
 DialogBoxMorph.prototype.destroy = function () {
+    var world = this.world();
+    if (world) {
+        world.setFocus(null);
+    }
     DialogBoxMorph.uber.destroy.call(this);
     if (this.key) {
         delete this.instances[this.key];
@@ -2885,10 +2902,33 @@ DialogBoxMorph.prototype.fixLayout = function () {
 DialogBoxMorph.prototype.processKeyPress = nop;
 
 DialogBoxMorph.prototype.processKeyDown = function (event) {
+    var world = this.world();
     // this.inspectKeyEvent(event);
     switch (event.keyCode) {
-    case 13:
-        this.ok();
+    case 9: // Tab - navigate focusable items within the dialog
+        var next;
+        if (event.shiftKey) {
+            next = this.previousFocusable(world.focused);
+        } else {
+            next = this.nextFocusable(world.focused);
+        }
+        if (next) {
+            world.setFocus(next);
+        }
+        event.preventDefault();
+        break;
+    case 13: // Enter
+        if (world.focused && world.focused instanceof TriggerMorph) {
+            world.focused.mouseClickLeft(world.focused.center());
+        } else {
+            this.ok();
+        }
+        break;
+    case 32: // Space - activate focused morph
+        if (world.focused && world.focused instanceof TriggerMorph) {
+            world.focused.mouseClickLeft(world.focused.center());
+            event.preventDefault();
+        }
         break;
     case 27:
         this.cancel();
@@ -3231,6 +3271,9 @@ InputFieldMorph.prototype.init = function (
     this.oldContentsExtent = contents.extent();
 
     InputFieldMorph.uber.init.call(this);
+    this.isFocusable = true;
+    this.ariaRole = 'textbox';
+    this.ariaLabel = text || null;
     this.color = WHITE;
     this.add(contents);
     this.add(arrow);
