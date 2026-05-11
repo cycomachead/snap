@@ -3335,6 +3335,10 @@ Morph.prototype.init = function () {
     this.customContextMenu = null;
     this.lastTime = Date.now();
     this.onNextStep = null; // optional function to be run once
+    this.isFocusable = false;
+    this.ariaLabel = null; // optional accessibility label
+    this.ariaRole = null; // optional accessibility role
+    this.screenReaderElement = null; // offscreen DOM element for screen readers
 };
 
 // Morph string representation: e.g. 'a Morph 2 [20@45 | 130@250]'
@@ -3351,6 +3355,13 @@ Morph.prototype.toString = function () {
 // Morph deleting:
 
 Morph.prototype.destroy = function () {
+    var w = this.root();
+    if (w instanceof WorldMorph && w.focused === this) {
+        w.focused = null;
+    }
+    if (this.screenReaderElement) {
+        this.removeScreenReaderElement();
+    }
     if (this.parent !== null) {
         this.fullChanged();
         this.parent.removeChild(this);
@@ -3777,12 +3788,47 @@ Morph.prototype.drawOn = function (ctx, rect) {
         }
     }
     ctx.restore();
+    // lazily create the screen reader element on first render
+    if (this.isFocusable && !this.screenReaderElement) {
+        this.createScreenReaderElement();
+    }
 };
 
 Morph.prototype.fullDrawOn = function (aContext, aRect) {
     if (!this.isVisible) {return; }
     this.drawOn(aContext, aRect);
     this.children.forEach(child => child.fullDrawOn(aContext, aRect));
+    this.drawFocusRing(aContext, aRect);
+};
+
+Morph.prototype.drawFocusRing = function (ctx, rect) {
+    var w = this.world();
+    if (!w || w.focused !== this) {return; }
+    var clipped = rect.intersect(this.bounds);
+    if (!clipped.extent().gt(ZERO)) {return; }
+    ctx.save();
+    ctx.strokeStyle = 'rgba(30, 130, 230, 0.8)';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    if (ctx.roundRect) {
+        ctx.roundRect(
+            this.left() + 1,
+            this.top() + 1,
+            this.width() - 2,
+            this.height() - 2,
+            3
+        );
+    } else {
+        ctx.rect(
+            this.left() + 1,
+            this.top() + 1,
+            this.width() - 2,
+            this.height() - 2
+        );
+    }
+    ctx.stroke();
+    ctx.restore();
 };
 
 Morph.prototype.hide = function () {
@@ -4808,6 +4854,148 @@ Morph.prototype.previousTab = function (editField) {
 };
 
 */
+
+// Morph focus tabbing:
+
+Morph.prototype.allFocusableFields = function () {
+    return this.allChildren().filter(each =>
+        each.isFocusable &&
+            each.isVisible &&
+            !(each instanceof MenuItemMorph)
+    );
+};
+
+Morph.prototype.nextFocusable = function (current) {
+    var fields = this.allFocusableFields(),
+        idx = fields.indexOf(current);
+    if (idx !== -1) {
+        if (fields.length > idx + 1) {
+            return fields[idx + 1];
+        }
+    }
+    return fields[0];
+};
+
+Morph.prototype.previousFocusable = function (current) {
+    var fields = this.allFocusableFields(),
+        idx = fields.indexOf(current);
+    if (idx !== -1) {
+        if (idx > 0) {
+            return fields[idx - 1];
+        }
+        return fields[fields.length - 1];
+    }
+    return fields[0];
+};
+
+// Morph screen reader support:
+
+Morph.prototype.createScreenReaderElement = function () {
+    // create an offscreen DOM element that mirrors this morph
+    // for screen reader accessibility. The element is positioned
+    // offscreen but remains in the DOM so screen readers can find it.
+    var world = this.world(),
+        container, el;
+    if (!world || this.screenReaderElement) {return; }
+    container = world.screenReaderContainer;
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'morphic-screen-reader';
+        container.setAttribute('aria-live', 'polite');
+        container.style.position = 'absolute';
+        container.style.width = '1px';
+        container.style.height = '1px';
+        container.style.overflow = 'hidden';
+        container.style.clip = 'rect(0, 0, 0, 0)';
+        container.style.whiteSpace = 'nowrap';
+        container.style.border = '0';
+        container.style.padding = '0';
+        container.style.margin = '-1px';
+        document.body.appendChild(container);
+        world.screenReaderContainer = container;
+    }
+    el = document.createElement('button');
+    el.setAttribute('role', this.ariaRole || 'button');
+    el.setAttribute('aria-label', this.ariaLabel || this.labelString || '');
+    el.setAttribute('tabindex', '-1'); // managed by morphic, not browser
+    el.style.position = 'absolute';
+    el.style.width = '1px';
+    el.style.height = '1px';
+    el.style.overflow = 'hidden';
+    el.style.clip = 'rect(0, 0, 0, 0)';
+    el.style.whiteSpace = 'nowrap';
+    el.style.border = '0';
+    el.style.padding = '0';
+    el.style.margin = '-1px';
+    el.morphRef = this;
+
+    // when the screen reader element receives focus, focus the morph
+    el.addEventListener('focus', () => {
+        var w = this.world();
+        if (w) {
+            w.setFocus(this);
+        }
+    });
+
+    // when the screen reader element is activated, trigger the morph
+    el.addEventListener('click', (event) => {
+        event.preventDefault();
+        if (this.mouseClickLeft) {
+            this.mouseClickLeft(this.center());
+        }
+    });
+    el.addEventListener('keydown', (event) => {
+        if (event.keyCode === 13 || event.keyCode === 32) {
+            event.preventDefault();
+            if (this.mouseClickLeft) {
+                this.mouseClickLeft(this.center());
+            }
+        }
+    });
+
+    container.appendChild(el);
+    this.screenReaderElement = el;
+};
+
+Morph.prototype.updateScreenReaderElement = function () {
+    if (!this.screenReaderElement) {return; }
+    var world = this.world(),
+        el = this.screenReaderElement;
+    el.setAttribute('aria-label', this.ariaLabel || this.labelString || '');
+    el.setAttribute('role', this.ariaRole || 'button');
+    if (world && world.focused === this) {
+        el.setAttribute('aria-current', 'true');
+    } else {
+        el.removeAttribute('aria-current');
+    }
+    // update checked state for toggles
+    if (this.state !== undefined && (this.ariaRole === 'checkbox' ||
+            this.ariaRole === 'radio' ||
+            this.ariaRole === 'toggle button')) {
+        el.setAttribute('aria-checked', this.state ? 'true' : 'false');
+    }
+};
+
+Morph.prototype.removeScreenReaderElement = function () {
+    if (this.screenReaderElement) {
+        if (this.screenReaderElement.parentNode) {
+            this.screenReaderElement.parentNode.removeChild(
+                this.screenReaderElement
+            );
+        }
+        this.screenReaderElement = null;
+    }
+};
+
+Morph.prototype.ensureScreenReaderElement = function () {
+    // lazily create or update the screen reader element
+    if (!this.isFocusable) {return; }
+    if (!this.screenReaderElement) {
+        this.createScreenReaderElement();
+    } else {
+        this.updateScreenReaderElement();
+    }
+};
 
 // Morph events:
 
@@ -9887,6 +10075,9 @@ TriggerMorph.prototype.init = function (
     TriggerMorph.uber.init.call(this);
 
     // override inherited properites:
+    this.isFocusable = true;
+    this.ariaRole = 'button';
+    this.ariaLabel = labelString || null;
     this.color = WHITE;
     this.createLabel();
 };
@@ -10103,6 +10294,7 @@ function MenuItemMorph(
         italic,
         doubleClickAction
     );
+    this.isFocusable = false; // menus have their own keyboard nav
 }
 
 MenuItemMorph.prototype.createLabel = function () {
@@ -10368,6 +10560,7 @@ FrameMorph.prototype.fullDrawOn = function (ctx, aRect) {
     if (shadow) {
         shadow.drawOn(ctx, aRect);
     }
+    this.drawFocusRing(ctx, aRect);
 };
 
 // FrameMorph navigation:
@@ -11486,6 +11679,14 @@ HandMorph.prototype.processMouseDown = function (event) {
                 this.world.stopEditing();
             }
         }
+        // set focus on clicked morph if focusable
+        var focusTarget = morph;
+        while (focusTarget && !focusTarget.isFocusable) {
+            focusTarget = focusTarget.parent;
+        }
+        this.world.setFocus(
+            focusTarget && focusTarget.isFocusable ? focusTarget : null
+        );
         if (!morph.mouseMove) {
             this.morphToGrab = morph.rootForGrab();
             this.grabPosition = this.bounds.origin.copy();
@@ -12090,6 +12291,8 @@ WorldMorph.prototype.init = function (aCanvas, fillPage) {
     this.hand = new HandMorph(this);
     this.keyboardHandler = null;
     this.keyboardFocus = null;
+    this.focused = null;
+    this.screenReaderContainer = null; // offscreen container for a11y DOM
     this.cursor = null;
     this.lastEditedText = null;
     this.activeMenu = null;
@@ -12351,8 +12554,19 @@ WorldMorph.prototype.initKeyboardHandler = function () {
             // received by all browsers
             if (event.keyCode === 9) {
                 if (kbd.world.keyboardFocus &&
-                        kbd.world.keyboardFocus.processKeyPress) {
-                    kbd.world.keyboardFocus.processKeyPress(event);
+                        (kbd.world.keyboardFocus instanceof CursorMorph ||
+                        kbd.world.keyboardFocus.reactToKeyEvent)) {
+                    // text editing or script navigation handles Tab
+                    if (kbd.world.keyboardFocus.processKeyPress) {
+                        kbd.world.keyboardFocus.processKeyPress(event);
+                    }
+                } else {
+                    // focus navigation
+                    if (event.shiftKey) {
+                        kbd.world.focusPrevious();
+                    } else {
+                        kbd.world.focusNext();
+                    }
                 }
                 event.preventDefault();
             }
@@ -12600,6 +12814,55 @@ WorldMorph.prototype.previousTab = function (editField) {
         prev.selectAll();
         prev.edit();
     }
+};
+
+// WorldMorph focus management:
+
+WorldMorph.prototype.setFocus = function (aMorph) {
+    if (this.focused === aMorph) {return; }
+    if (this.focused) {
+        this.focused.rerender();
+        if (this.focused.reactToLoseFocus) {
+            this.focused.reactToLoseFocus();
+        }
+        this.focused.updateScreenReaderElement();
+    }
+    this.focused = aMorph;
+    if (aMorph) {
+        aMorph.rerender();
+        if (aMorph.scrollIntoView) {
+            aMorph.scrollIntoView();
+        }
+        if (aMorph.reactToGainFocus) {
+            aMorph.reactToGainFocus();
+        }
+        aMorph.ensureScreenReaderElement();
+        if (aMorph.screenReaderElement) {
+            aMorph.screenReaderElement.focus();
+        }
+    }
+};
+
+WorldMorph.prototype.focusNext = function () {
+    var next;
+    if (this.focused) {
+        next = this.nextFocusable(this.focused);
+    } else {
+        var fields = this.allFocusableFields();
+        next = fields.length > 0 ? fields[0] : null;
+    }
+    this.setFocus(next);
+};
+
+WorldMorph.prototype.focusPrevious = function () {
+    var prev;
+    if (this.focused) {
+        prev = this.previousFocusable(this.focused);
+    } else {
+        var fields = this.allFocusableFields();
+        prev = fields.length > 0 ? fields[fields.length - 1] : null;
+    }
+    this.setFocus(prev);
 };
 
 // WorldMorph menu:
@@ -13021,5 +13284,11 @@ WorldMorph.prototype.toggleHolesDisplay = function () {
 
 WorldMorph.prototype.destroy = function () {
     window.removeEventListener("onbeforeunload", this.onbeforeunloadListener);
+    if (this.screenReaderContainer &&
+            this.screenReaderContainer.parentNode) {
+        this.screenReaderContainer.parentNode.removeChild(
+            this.screenReaderContainer
+        );
+    }
     WorldMorph.uber.destroy.call(this);
 };
