@@ -9905,6 +9905,8 @@ ProjectDialogMorph.prototype.init = function (ide, task) {
     this.nameField = null;
     this.filterField = null;
     this.magnifyingGlass = null;
+    this.groupCheckBox = null;
+    this.groupByLetter = false;
     this.listField = null;
     this.preview = null;
     this.notesText = null;
@@ -10002,15 +10004,10 @@ ProjectDialogMorph.prototype.buildContents = function () {
         this.body.add(this.nameField);
     }
 
+    this.buildGroupCheckBox();
+
     this.listField = new ListMorph([]);
-    this.fixListFieldItemColors();
-    this.listField.fixLayout = nop;
-    this.listField.edge = InputFieldMorph.prototype.edge;
-    this.listField.fontSize = InputFieldMorph.prototype.fontSize;
-    this.listField.typeInPadding = InputFieldMorph.prototype.typeInPadding;
-    this.listField.contrast = InputFieldMorph.prototype.contrast;
-    this.listField.render = InputFieldMorph.prototype.render;
-    this.listField.drawRectBorder = InputFieldMorph.prototype.drawRectBorder;
+    this.applyListFieldStyling();
 
     this.body.add(this.listField);
 
@@ -10260,6 +10257,104 @@ ProjectDialogMorph.prototype.addSourceButton = function (
 
 // ProjectDialogMorph list field control
 
+ProjectDialogMorph.prototype.buildGroupCheckBox = function () {
+    this.groupCheckBox = new ToggleMorph(
+        'checkbox',
+        this,
+        () => this.toggleGroupByLetter(),
+        localize('Group By First Letter'),
+        () => this.groupByLetter
+    );
+    this.groupCheckBox.edge = this.buttonEdge / 2;
+    this.groupCheckBox.outline = this.buttonOutline / 2;
+    this.groupCheckBox.outlineColor = this.buttonOutlineColor;
+    this.groupCheckBox.outlineGradient = this.buttonOutlineGradient;
+    this.groupCheckBox.contrast = this.buttonContrast;
+    this.groupCheckBox.fixLayout();
+    this.body.add(this.groupCheckBox);
+};
+
+ProjectDialogMorph.prototype.toggleGroupByLetter = function () {
+    this.groupByLetter = !this.groupByLetter;
+    if (this.source === 'cloud') {
+        // re-render existing cloud projects without re-fetching
+        this.installCloudProjectList(this.projectList);
+    } else if (this.source) {
+        this.setSource(this.source);
+    }
+};
+
+ProjectDialogMorph.prototype.applyListFieldStyling = function () {
+    this.fixListFieldItemColors();
+    this.listField.fixLayout = nop;
+    this.listField.edge = InputFieldMorph.prototype.edge;
+    this.listField.fontSize = InputFieldMorph.prototype.fontSize;
+    this.listField.typeInPadding = InputFieldMorph.prototype.typeInPadding;
+    this.listField.contrast = InputFieldMorph.prototype.contrast;
+    this.listField.render = InputFieldMorph.prototype.render;
+    this.listField.drawRectBorder = InputFieldMorph.prototype.drawRectBorder;
+};
+
+ProjectDialogMorph.prototype.groupProjectsByLetter = function (
+    projects,
+    labelGetter
+) {
+    var groups = new Map(),
+        result = [];
+    projects.forEach(p => {
+        var name = labelGetter(p) || '',
+            letter = (name.length ? name[0] : '?').toUpperCase();
+        if (!/[A-Z]/.test(letter)) {
+            letter = '#';
+        }
+        if (!groups.has(letter)) {
+            groups.set(letter, []);
+        }
+        groups.get(letter).push(p);
+    });
+    Array.from(groups.keys()).sort().forEach(letter => {
+        result.push({
+            isLetterGroup: true,
+            letter: letter,
+            children: groups.get(letter)
+        });
+    });
+    return result;
+};
+
+ProjectDialogMorph.prototype.makeProjectListField = function (
+    elements,
+    labelGetter,
+    format,
+    doubleClickAction
+) {
+    var listField,
+        displayElements;
+    if (this.groupByLetter && elements.length > 0) {
+        displayElements = this.groupProjectsByLetter(elements, labelGetter);
+        listField = new TreeListMorph(
+            displayElements,
+            (e) => (e && e.isLetterGroup) ? e.letter : labelGetter(e),
+            (e) => (e && e.isLetterGroup) ? e.children : null,
+            format,
+            doubleClickAction
+        );
+        // expand all groups by default so the user sees their projects
+        displayElements.forEach(g => listField.expanded.add(g));
+        listField.buildListContents();
+    } else {
+        listField = new ListMorph(
+            elements,
+            elements.length > 0 ? labelGetter : null,
+            format,
+            doubleClickAction
+        );
+    }
+    // remember the project-level labelGetter so the filter can regroup
+    listField.projectLabelGetter = labelGetter;
+    return listField;
+};
+
 ProjectDialogMorph.prototype.fixListFieldItemColors = function () {
     // remember to always fixLayout() afterwards for the changes
     // to take effect
@@ -10286,18 +10381,28 @@ ProjectDialogMorph.prototype.buildFilterField = function () {
     this.body.add(this.filterField);
 
     this.filterField.reactToInput = function (evt) {
-        var text = this.getValue();
-
-        myself.listField.elements =
-            myself.projectList.filter(aProject => {
+        var text = this.getValue(),
+            filtered = myself.projectList.filter(aProject => {
                 var name = aProject.projectname || aProject.name,
                     notes = aProject.notes || '';
                 return name.toLowerCase().indexOf(text.toLowerCase()) > -1 ||
                     notes.toLowerCase().indexOf(text.toLowerCase()) > -1;
-            });
+            }),
+            groups;
 
-        if (myself.listField.elements.length === 0) {
-            myself.listField.elements.push('(no matches)');
+        if (filtered.length === 0) {
+            myself.listField.elements = ['(no matches)'];
+        } else if (myself.groupByLetter &&
+                myself.listField instanceof TreeListMorph) {
+            groups = myself.groupProjectsByLetter(
+                filtered,
+                myself.listField.projectLabelGetter
+            );
+            myself.listField.expanded.clear();
+            groups.forEach(g => myself.listField.expanded.add(g));
+            myself.listField.elements = groups;
+        } else {
+            myself.listField.elements = filtered;
         }
 
         myself.clearDetails();
@@ -10363,11 +10468,9 @@ ProjectDialogMorph.prototype.setSource = function (source) {
     }
 
     this.listField.destroy();
-    this.listField = new ListMorph(
+    this.listField = this.makeProjectListField(
         this.projectList,
-        this.projectList.length > 0 ?
-            (element) => {return element.name || element; }
-                : null,
+        (element) => element.name || element,
         null,
         () => this.ok()
     );
@@ -10375,14 +10478,7 @@ ProjectDialogMorph.prototype.setSource = function (source) {
         this.listField.hide();
     }
 
-    this.fixListFieldItemColors();
-    this.listField.fixLayout = nop;
-    this.listField.edge = InputFieldMorph.prototype.edge;
-    this.listField.fontSize = InputFieldMorph.prototype.fontSize;
-    this.listField.typeInPadding = InputFieldMorph.prototype.typeInPadding;
-    this.listField.contrast = InputFieldMorph.prototype.contrast;
-    this.listField.render = InputFieldMorph.prototype.render;
-    this.listField.drawRectBorder = InputFieldMorph.prototype.drawRectBorder;
+    this.applyListFieldStyling();
 
     if (this.source === 'local') {
         this.listField.action = (item) => {
@@ -10490,11 +10586,9 @@ ProjectDialogMorph.prototype.installCloudProjectList = function (pl) {
     );
 
     this.listField.destroy();
-    this.listField = new ListMorph(
+    this.listField = this.makeProjectListField(
         this.projectList,
-        this.projectList.length > 0 ?
-            (element) => {return element.projectname || element; }
-                : null,
+        (element) => element.projectname || element,
         [ // format: display shared project names bold
             [
                 'bold',
@@ -10507,14 +10601,7 @@ ProjectDialogMorph.prototype.installCloudProjectList = function (pl) {
         ],
         () => this.ok()
     );
-    this.fixListFieldItemColors();
-    this.listField.fixLayout = nop;
-    this.listField.edge = InputFieldMorph.prototype.edge;
-    this.listField.fontSize = InputFieldMorph.prototype.fontSize;
-    this.listField.typeInPadding = InputFieldMorph.prototype.typeInPadding;
-    this.listField.contrast = InputFieldMorph.prototype.contrast;
-    this.listField.render = InputFieldMorph.prototype.render;
-    this.listField.drawRectBorder = InputFieldMorph.prototype.drawRectBorder;
+    this.applyListFieldStyling();
 
     this.listField.action = (item) => {
         if (item === undefined) {return; }
@@ -10944,7 +11031,10 @@ ProjectDialogMorph.prototype.edit = function () {
 ProjectDialogMorph.prototype.fixLayout = function () {
     var th = fontHeight(this.titleFontSize) + this.titlePadding * 2,
         thin = this.padding / 2,
-        inputField = this.nameField || this.filterField;
+        inputField = this.nameField || this.filterField,
+        groupCBSlot = this.groupCheckBox
+            ? this.groupCheckBox.width() + this.padding * 2
+            : 0;
 
     if (this.buttons && (this.buttons.children.length > 0)) {
         this.buttons.fixLayout();
@@ -10962,10 +11052,19 @@ ProjectDialogMorph.prototype.fixLayout = function () {
         this.srcBar.setPosition(this.body.position());
 
         inputField.setWidth(
-                this.body.width() - this.srcBar.width() - this.padding * 6
+                this.body.width() - this.srcBar.width()
+                    - this.padding * 6 - groupCBSlot
             );
         inputField.setLeft(this.srcBar.right() + this.padding * 3);
         inputField.setTop(this.srcBar.top());
+
+        if (this.groupCheckBox) {
+            this.groupCheckBox.setLeft(inputField.right() + this.padding);
+            this.groupCheckBox.setTop(
+                inputField.top() +
+                    (inputField.height() - this.groupCheckBox.height()) / 2
+            );
+        }
 
         this.listField.setLeft(this.srcBar.right() + this.padding);
         this.listField.setWidth(

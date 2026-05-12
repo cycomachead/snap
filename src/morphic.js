@@ -97,6 +97,7 @@
             FrameMorph
                 ScrollFrameMorph
                     ListMorph
+                        TreeListMorph
                 StringFieldMorph
                 WorldMorph
             HandleMorph
@@ -149,6 +150,7 @@
     FrameMorph
     ScrollFrameMorph
     ListMorph
+    TreeListMorph
     StringFieldMorph
     BouncerMorph*
     HandMorph
@@ -11037,6 +11039,209 @@ ListMorph.prototype.activateIndex = function (idx) {
     item.userState = 'pressed';
     item.rerender();
     item.trigger();
+};
+
+// TreeListMorph ///////////////////////////////////////////////////////
+
+// I am a ListMorph whose elements may include "container" entries that
+// can be expanded or collapsed to reveal their children. Children are
+// themselves selectable list items (and may in turn be containers).
+
+TreeListMorph.prototype = new ListMorph();
+TreeListMorph.prototype.constructor = TreeListMorph;
+TreeListMorph.uber = ListMorph.prototype;
+
+function TreeListMorph(
+    elements,
+    labelGetter,
+    childrenGetter,
+    format,
+    onDoubleClick,
+    separator,
+    verbatim
+) {
+/*
+    Like ListMorph, with one extra parameter:
+
+        childrenGetter - optional function taking an element and returning
+        either an Array of child elements (in which case the element is
+        treated as an expandable container) or null/undefined (in which
+        case the element is a regular leaf item).
+
+    The default childrenGetter returns element.children when it is an
+    Array, and null otherwise.
+
+    Clicking a container toggles its expanded state instead of selecting
+    it. Leaves behave exactly as in ListMorph.
+*/
+    this.init(
+        elements || [],
+        labelGetter || function (element) {
+            if (isString(element)) {
+                return element;
+            }
+            if (element.toSource) {
+                return element.toSource();
+            }
+            return element.toString();
+        },
+        childrenGetter || function (element) {
+            if (element && element.children instanceof Array) {
+                return element.children;
+            }
+            return null;
+        },
+        format || [],
+        onDoubleClick,
+        separator,
+        verbatim
+    );
+}
+
+TreeListMorph.prototype.init = function (
+    elements,
+    labelGetter,
+    childrenGetter,
+    format,
+    onDoubleClick,
+    separator,
+    verbatim
+) {
+    this.childrenGetter = childrenGetter;
+    this.expanded = new Set();
+    this.indentString = '   ';
+    this.expandedIcon = '▼ '; // black down-pointing triangle
+    this.collapsedIcon = '▶ '; // black right-pointing triangle
+    TreeListMorph.uber.init.call(
+        this,
+        elements,
+        labelGetter,
+        format,
+        onDoubleClick,
+        separator,
+        verbatim
+    );
+};
+
+TreeListMorph.prototype.buildListContents = function () {
+    if (this.listContents) {
+        this.listContents.destroy();
+    }
+    this.listContents = new MenuMorph(
+        this.select,
+        null,
+        this
+    );
+    if (this.elements.length === 0) {
+        this.elements = ['(empty)'];
+    }
+    this.elements.forEach(element => this.addTreeItem(element, 0));
+    this.listContents.isListContents = true;
+    this.listContents.createItems();
+    this.listContents.setPosition(this.contents.position());
+    this.addContents(this.listContents);
+};
+
+TreeListMorph.prototype.addTreeItem = function (element, depth) {
+    var color = null,
+        bold = false,
+        italic = false,
+        children = this.childrenGetter(element),
+        isContainer = children instanceof Array,
+        isOpen = isContainer && this.expanded.has(element),
+        prefix = '',
+        label,
+        i;
+
+    this.format.forEach(pair => {
+        if (pair[1].call(null, element)) {
+            if (pair[0] === 'bold') {
+                bold = true;
+            } else if (pair[0] === 'italic') {
+                italic = true;
+            } else { // assume it's a color
+                color = pair[0];
+            }
+        }
+    });
+
+    for (i = 0; i < depth; i += 1) {
+        prefix += this.indentString;
+    }
+    if (isContainer) {
+        prefix += isOpen ? this.expandedIcon : this.collapsedIcon;
+    } else if (depth > 0) {
+        // align leaves under their container's label, past the triangle
+        prefix += '   ';
+    }
+    label = this.labelGetter(element);
+    if (label === this.separator) {
+        this.listContents.addLine();
+    } else if (isContainer) {
+        this.listContents.addItem(
+            prefix + label,
+            () => {
+                this.toggle(element);
+                return null; // suppresses selection in this.select
+            },
+            null, // hint
+            color,
+            bold,
+            italic,
+            null, // doubleClickAction
+            null, // shortcut
+            true // verbatim - the label is already composed
+        );
+    } else {
+        this.listContents.addItem(
+            prefix + label,
+            element,
+            null, // hint
+            color,
+            bold,
+            italic,
+            this.doubleClickAction,
+            null, // shortcut
+            true // verbatim - the label is already composed
+        );
+    }
+
+    if (isContainer && isOpen) {
+        children.forEach(child => this.addTreeItem(child, depth + 1));
+    }
+};
+
+TreeListMorph.prototype.toggle = function (element) {
+    if (this.expanded.has(element)) {
+        this.expanded.delete(element);
+    } else {
+        this.expanded.add(element);
+    }
+    this.buildListContents();
+    this.contents.adjustBounds();
+    this.changed();
+};
+
+TreeListMorph.prototype.expand = function (element) {
+    if (!this.expanded.has(element)) {
+        this.expanded.add(element);
+        this.buildListContents();
+        this.contents.adjustBounds();
+        this.changed();
+    }
+};
+
+TreeListMorph.prototype.collapse = function (element) {
+    if (this.expanded.has(element)) {
+        this.expanded.delete(element);
+        this.buildListContents();
+        this.contents.adjustBounds();
+        this.changed();
+    }
+};
+
+TreeListMorph.prototype.isExpanded = function (element) {
+    return this.expanded.has(element);
 };
 
 // StringFieldMorph ////////////////////////////////////////////////////
